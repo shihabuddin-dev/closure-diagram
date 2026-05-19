@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Closures, Memory Accurate</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        :root {
+            --bg: #080c14;
+            --s1: #0f1623;
+            --s2: #161f30;
+            --s3: #1d2840;
+            --border: #222d42;
+            --cyan: #00e5ff;
+            --green: #00e096;
+            --orange: #ff8c42;
+            --blue: #6eb5ff;
+            --purple: #b48eff;
+            --red: #ff6b6b;
+            --yellow: #ffd166;
+            --text: #dde8ff;
+            --muted: #4a5a7a;
+            --muted2: #2a3550;
+        }
+
+        body {
+            background: var(--bg);
+            font-family: 'Syne', sans-serif;
+            color: var(--text);
+            min-height: 100vh;
+            padding: 24px 16px 48px;
+            background-image:
+                radial-gradient(ellipse 60% 40% at 10% 0%, rgba(0, 229, 255, 0.06) 0%, transparent 70%),
+                radial-gradient(ellipse 50% 30% at 90% 100%, rgba(0, 224, 150, 0.05) 0%, transparent 70%);
+        }
+
+        /* HEADER */
+        header {
+            text-align: center;
+            margin-bottom: 28px
+        }
+
+        header h1 {
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: var(--cyan);
+            letter-spacing: -1px
+        }
+
+        header p {
+            color: var(--muted);
+            font-size: 0.82rem;
+            margin-top: 4px;
+            font-weight: 400
+        }
+
+        /* LAYOUT */
+        .wrap {
+            max-width: 1180px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            grid-template-rows: auto auto;
+            gap: 14px
+        }
+
+        /* CODE PANEL */
+        .code-panel {
+            grid-column: 1;
+            grid-row: 1/3;
+            background: var(--s1);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column
+        }
+
+        .bar {
+            background: var(--s2);
+            border-bottom: 1px solid var(--border);
+            padding: 9px 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: .7rem;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%
+        }
+
+        .dot.r {
+            background: #ff5f57
+        }
+
+        .dot.y {
+            background: #febc2e
+        }
+
+        .dot.g {
+            background: #28c840
+        }
+
+        pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .77rem;
+            line-height: 1.9;
+            padding: 18px;
+            flex: 1;
+            overflow: auto
+        }
+
+        .ln {
+            display: block;
+            padding: 1px 5px;
+            border-radius: 4px;
+            transition: background .3s, border-color .3s
+        }
+
+        .ln.hl {
+            background: rgba(0, 229, 255, .1);
+            border-left: 2px solid var(--cyan);
+            padding-left: 3px
+        }
+
+        .kw {
+            color: #ff7b8a
+        }
+
+        .fn {
+            color: var(--blue)
+        }
+
+        .typ {
+            color: var(--cyan)
+        }
+
+        .cm {
+            color: #2e3f60;
+            font-style: italic
+        }
+
+        .num {
+            color: var(--green)
+        }
+
+        .op {
+            color: var(--muted)
+        }
+
+        /* MEMORY PANEL */
+        .mem-panel {
+            grid-column: 2;
+            grid-row: 1;
+            background: var(--s1);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 20px;
+            position: relative;
+            min-height: 400px
+        }
+
+        .panel-title {
+            font-size: .65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--muted);
+            margin-bottom: 14px
+        }
+
+        .regions {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            height: calc(100% - 32px)
+        }
+
+        /* region base */
+        .region {
+            border-radius: 10px;
+            padding: 10px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 7px
+        }
+
+        .rtag {
+            position: absolute;
+            top: -9px;
+            left: 10px;
+            background: var(--s1);
+            padding: 0 6px;
+            font-size: .62rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase
+        }
+
+        /* stack */
+        .r-stack {
+            border: 1.5px dashed var(--orange)
+        }
+
+        .r-stack .rtag {
+            color: var(--orange)
+        }
+
+        /* heap */
+        .r-heap {
+            border: 1.5px solid var(--green);
+            background: rgba(0, 224, 150, .02)
+        }
+
+        .r-heap .rtag {
+            color: var(--green)
+        }
+
+        /* code seg */
+        .r-code {
+            border: 1.5px solid var(--purple);
+            background: rgba(180, 142, 255, .02)
+        }
+
+        .r-code .rtag {
+            color: var(--purple)
+        }
+
+        /* variables/next */
+        .r-vars {
+            border: 1.5px solid var(--blue);
+            background: rgba(110, 181, 255, .02)
+        }
+
+        .r-vars .rtag {
+            color: var(--blue)
+        }
+
+        /* FRAMES / CELLS */
+        .frame,
+        .cell {
+            border-radius: 8px;
+            padding: 9px 11px;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity .4s, transform .4s, box-shadow .4s, border-color .4s
+        }
+
+        .frame.show,
+        .cell.show {
+            opacity: 1;
+            transform: translateY(0)
+        }
+
+        .frame.dead {
+            opacity: .18;
+            border-style: dashed !important;
+            box-shadow: none !important;
+            transform: translateY(3px)
+        }
+
+        /* stack frames */
+        .frame {
+            background: var(--s2);
+            border: 1.5px solid var(--orange)
+        }
+
+        .frame.show {
+            box-shadow: 0 0 16px rgba(255, 140, 66, .3)
+        }
+
+        .ftitle {
+            font-size: .63rem;
+            color: var(--orange);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            margin-bottom: 7px
+        }
+
+        /* var row */
+        .vrow {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .75rem;
+            flex-wrap: wrap
+        }
+
+        .vn {
+            color: var(--blue)
+        }
+
+        .veq {
+            color: var(--muted)
+        }
+
+        .vv {
+            color: var(--green);
+            font-weight: 700;
+            transition: color .3s
+        }
+
+        .vv.ptr {
+            color: var(--cyan);
+            font-size: .68rem
+        }
+
+        .badge {
+            font-size: .58rem;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            opacity: 0;
+            transition: opacity .5s;
+            margin-left: 2px
+        }
+
+        .badge.esc {
+            background: rgba(255, 107, 107, .15);
+            color: var(--red);
+            border: 1px solid var(--red)
+        }
+
+        .badge.show {
+            opacity: 1
+        }
+
+        .dead-lbl {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .72rem;
+            font-weight: 700;
+            color: var(--muted);
+            letter-spacing: 4px;
+            opacity: 0;
+            transition: opacity .5s;
+            border-radius: 8px
+        }
+
+        .frame.dead .dead-lbl {
+            opacity: 1
+        }
+
+        /* heap cell */
+        .cell.heap-cell {
+            background: rgba(0, 224, 150, .07);
+            border: 1.5px solid var(--green)
+        }
+
+        .cell.heap-cell.show {
+            box-shadow: 0 0 16px rgba(0, 224, 150, .3)
+        }
+
+        .haddr {
+            font-size: .6rem;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 5px
+        }
+
+        .hrow {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .75rem
+        }
+
+        .hnum {
+            color: var(--green);
+            font-size: 1.2rem;
+            font-weight: 700;
+            transition: transform .2s, color .15s
+        }
+
+        .hnum.bump {
+            transform: scale(1.45);
+            color: #fff
+        }
+
+        /* closure struct */
+        .cell.closure-cell {
+            background: rgba(0, 224, 150, .05);
+            border: 1.5px solid var(--green)
+        }
+
+        .cell.closure-cell.show {
+            box-shadow: 0 0 14px rgba(0, 224, 150, .2)
+        }
+
+        .struct-title {
+            font-size: .6rem;
+            color: var(--green);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px
+        }
+
+        .struct-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .68rem;
+            margin-bottom: 3px
+        }
+
+        .sfield {
+            color: var(--muted)
+        }
+
+        .sval {
+            color: var(--cyan);
+            font-size: .65rem
+        }
+
+        /* code cell */
+        .cell.code-cell {
+            background: rgba(180, 142, 255, .07);
+            border: 1.5px solid var(--purple)
+        }
+
+        .cell.code-cell.show {
+            box-shadow: 0 0 14px rgba(180, 142, 255, .3)
+        }
+
+        .code-cell-title {
+            font-size: .6rem;
+            color: var(--purple);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px
+        }
+
+        .code-cell-body {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .65rem;
+            color: var(--muted);
+            line-height: 1.5
+        }
+
+        .code-cell-body span {
+            color: var(--purple)
+        }
+
+        /* next var cell */
+        .cell.next-cell {
+            background: rgba(110, 181, 255, .07);
+            border: 1.5px solid var(--blue)
+        }
+
+        .cell.next-cell.show {
+            box-shadow: 0 0 14px rgba(110, 181, 255, .3)
+        }
+
+        .next-val {
+            transition: color .4s
+        }
+
+        .next-val.nil-val {
+            color: var(--muted)
+        }
+
+        .next-val.addr-val {
+            color: var(--cyan);
+            font-size: .68rem
+        }
+
+        /* canvas overlay */
+        #ac {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            border-radius: 14px
+        }
+
+        /* CONTROLS */
+        .ctrl-panel {
+            grid-column: 2;
+            grid-row: 2;
+            background: var(--s1);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 20px
+        }
+
+        .track {
+            display: flex;
+            gap: 0;
+            margin-bottom: 18px
+        }
+
+        .snode {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative
+        }
+
+        .snode:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 13px;
+            left: 50%;
+            right: -50%;
+            height: 1.5px;
+            background: var(--border);
+            transition: background .4s;
+            z-index: 0
+        }
+
+        .snode.done:not(:last-child)::after {
+            background: var(--cyan)
+        }
+
+        .sdot {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .68rem;
+            font-weight: 700;
+            color: var(--muted);
+            transition: all .35s;
+            position: relative;
+            z-index: 1
+        }
+
+        .snode.active .sdot {
+            border-color: var(--cyan);
+            background: rgba(0, 229, 255, .12);
+            color: var(--cyan);
+            box-shadow: 0 0 14px rgba(0, 229, 255, .4)
+        }
+
+        .snode.done .sdot {
+            border-color: var(--green);
+            background: rgba(0, 224, 150, .12);
+            color: var(--green)
+        }
+
+        .slbl {
+            font-size: .6rem;
+            color: var(--muted);
+            margin-top: 4px;
+            text-align: center;
+            transition: color .35s
+        }
+
+        .snode.active .slbl,
+        .snode.done .slbl {
+            color: var(--text)
+        }
+
+        .brow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap
+        }
+
+        .btn {
+            padding: 9px 22px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-family: 'Syne', sans-serif;
+            font-size: .82rem;
+            font-weight: 700;
+            transition: all .2s
+        }
+
+        .btn-next {
+            background: var(--cyan);
+            color: #000;
+            box-shadow: 0 0 20px rgba(0, 229, 255, .35)
+        }
+
+        .btn-next:hover {
+            background: #29eaff;
+            box-shadow: 0 0 28px rgba(0, 229, 255, .55);
+            transform: translateY(-1px)
+        }
+
+        .btn-next:disabled {
+            background: var(--border);
+            color: var(--muted);
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none
+        }
+
+        .btn-reset {
+            background: transparent;
+            color: var(--muted);
+            border: 1.5px solid var(--border)
+        }
+
+        .btn-reset:hover {
+            border-color: var(--text);
+            color: var(--text)
+        }
+
+        .btn-call {
+            padding: 8px 16px;
+            border-radius: 7px;
+            border: 1.5px solid var(--blue);
+            background: rgba(110, 181, 255, .1);
+            color: var(--blue);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .73rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all .2s
+        }
+
+        .btn-call:hover {
+            background: rgba(110, 181, 255, .22);
+            box-shadow: 0 0 12px rgba(110, 181, 255, .3)
+        }
+
+        .btn-call:disabled {
+            opacity: .3;
+            cursor: not-allowed
+        }
+
+        .desc {
+            margin-top: 14px;
+            background: rgba(0, 229, 255, .04);
+            border-left: 3px solid var(--cyan);
+            border-radius: 0 8px 8px 0;
+            padding: 11px 14px;
+            font-size: .8rem;
+            line-height: 1.65;
+            min-height: 52px;
+            transition: opacity .25s;
+            font-weight: 400
+        }
+
+        .desc em {
+            color: var(--cyan);
+            font-style: normal;
+            font-weight: 700
+        }
+
+        .desc code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .77rem;
+            color: var(--yellow)
+        }
+
+        @media(max-width:720px) {
+            .wrap {
+                grid-template-columns: 1fr
+            }
+
+            .code-panel {
+                grid-column: 1;
+                grid-row: 3;
+                max-height: 260px
+            }
+
+            .mem-panel {
+                grid-column: 1;
+                grid-row: 1
+            }
+
+            .ctrl-panel {
+                grid-column: 1;
+                grid-row: 2
+            }
+
+            .regions {
+                grid-template-columns: 1fr 1fr
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Go Closures</h1>
+
+    </header>
+
+    <div class="wrap">
+
+        <!-- CODE -->
+        <div class="code-panel">
+            <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>&nbsp;counter.go</div>
+            <pre id="codeEl">
+<span class="ln" id="l0"><span class="kw">func</span> <span class="fn">makeCounter</span>() <span class="kw">func</span>() <span class="typ">int</span> {</span>
+<span class="ln" id="l1">    count <span class="op">:=</span> <span class="num">0</span>  <span class="cm">// local var</span></span>
+<span class="ln" id="l2"></span>
+<span class="ln" id="l3">    inner <span class="op">:=</span> <span class="kw">func</span>() <span class="typ">int</span> {</span>
+<span class="ln" id="l4">        count<span class="op">++</span></span>
+<span class="ln" id="l5">        <span class="kw">return</span> count</span>
+<span class="ln" id="l6">    }</span>
+<span class="ln" id="l7">    <span class="kw">return</span> inner</span>
+<span class="ln" id="l8">}</span>
+<span class="ln" id="l9"></span>
+<span class="ln" id="l10"><span class="kw">func</span> <span class="fn">main</span>() {</span>
+<span class="ln" id="l11">    next <span class="op">:=</span> makeCounter()</span>
+<span class="ln" id="l12"></span>
+<span class="ln" id="l13">    fmt.Println(next()) <span class="cm">// ?</span></span>
+<span class="ln" id="l14">    fmt.Println(next()) <span class="cm">// ?</span></span>
+<span class="ln" id="l15">    fmt.Println(next()) <span class="cm">// ?</span></span>
+<span class="ln" id="l16">}</span>
+    </pre>
+        </div>
+
+        <!-- MEMORY -->
+        <div class="mem-panel" id="memPanel">
+            <div class="panel-title">RAM Layout</div>
+            <div class="regions">
+
+                <!-- STACK -->
+                <div class="region r-stack">
+                    <span class="rtag">Stack</span>
+
+                    <!-- makeCounter frame -->
+                    <div class="frame" id="makeFrame">
+                        <div class="ftitle">makeCounter()</div>
+                        <div class="vrow">
+                            <span class="vn">count</span><span class="veq">=</span><span class="vv">0</span>
+                            <span class="badge esc" id="escBadge">→ heap</span>
+                        </div>
+                        <div class="dead-lbl">DESTROYED</div>
+                    </div>
+
+                    <!-- main frame -->
+                    <div class="frame" id="mainFrame">
+                        <div class="ftitle">main()</div>
+                        <div class="vrow">
+                            <span class="vn">next</span><span class="veq">=</span>
+                            <span class="vv nil-val next-val" id="nextVal">nil</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HEAP -->
+                <div class="region r-heap">
+                    <span class="rtag">Heap</span>
+
+                    <!-- escaped count -->
+                    <div class="cell heap-cell" id="heapCount"
